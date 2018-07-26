@@ -1,0 +1,290 @@
+setwd("~/data/ngs/data/miRNA/miR-CATCH/1run/")
+options("scipen" = 20)
+
+parsing.RC <- function(x,y,z){
+  ## separo gli id del pre e del maturo per poi eliminare le ridondanze
+  ## input: 
+  # x = mirna count matrix
+  # y = carattere separatore ID premirna e maturo
+  # z = carattere separatore nome del campione dalle colonne 
+  ids <- unlist(strsplit(as.character(x[,1]),y))
+  pre <-ids[seq(1,2*nrow(x)-1,2)]
+  mature <- ids[seq(2,2*nrow(x),2)]
+  x.F <- unique(data.frame(cbind(mature,x[,-1]), 
+                           row.names =row.names(x)))
+  indF <- which(duplicated(data.frame(cbind(mature,x[,-1]), 
+                                      row.names =row.names(x))))
+  row.names(x.F) <-x[-indF,1] 
+  sampleNames <- sapply(strsplit(colnames(x.F),split=z),"[[", 1)
+  colnames(x.F) <- sampleNames
+  
+  ### RPM normalization
+  sizeFactors <- 1000000/colSums(x.F[,2:ncol(x.F)],na.rm=T)
+  x.RPM <- cbind.data.frame(mature=x.F$mature,t(t(x.F[,2:ncol(x.F)])*sizeFactors))
+  return(list(x.F,x.RPM))
+}
+
+MyMerge  <- function(x, y){
+  df <- merge(x, y, by= "row.names", all.x= T, all.y= T)
+  rownames(df) <- df$Row.names
+  df$Row.names <- NULL
+  return(df)
+}
+
+
+Path <- "~/data/ngs/data/miRNA/miR-CATCH/1run/results"
+
+###############################
+#### mircatch data loading and parsing 
+readcount_miRCatch.I <- read.table("./readcount_miRCatch-I.csv", 
+                                   sep=";",colClasses=c("character",rep("numeric",times=7)),header=T)
+
+out <- parsing.RC(readcount_miRCatch.I,",","_")
+RC.F <- as.data.frame(out[1])
+RC.RPM <- as.data.frame(out[2])
+
+FileOut <- paste(Path,"CountMatrix.RData",sep="/")
+save(list=c("RC.F","RC.RPM"),file = FileOut)
+
+
+
+
+#### loading mirnoma 2014 #####
+a375_I <- read.table("~/data/ngs/data/miRNA/melanoma_Laura/xPaper/RNAseq2014/TRIM/miRExpressOUT_v21/a375-dmso-1_CGATGT_L004_R1_001.T/miRNA_expression.txt")
+a375_II <- read.table("~/data/ngs/data/miRNA/melanoma_Laura/xPaper/RNAseq2014/TRIM/miRExpressOUT_v21/a375-dmso-2_TTAGGC_L004_R1_001.T/miRNA_expression.txt")
+
+
+colnames(a375_I) <- c("miRNAs","a375_I")
+colnames(a375_II) <- c("miRNAs","a375_II")
+
+a375.14 <- merge(a375_I,a375_II,all = TRUE)
+a375.14[is.na(a375.14)] <- 0
+
+
+out <- parsing.RC(a375.14,",","-")
+
+a375.14.RPM <- out[[2]]
+a375.14.RPM$mature <- NULL
+
+summary(a375.14.RPM)
+#  a375_I             a375_II        
+# Min.   :     0.00   Min.   :     0.00  
+# 1st Qu.:     0.11   1st Qu.:     0.13  
+# Median :     0.66   Median :     0.58  
+# Mean   :   603.86   Mean   :   603.86  
+# 3rd Qu.:     8.84   3rd Qu.:     7.74  
+# Max.   :116981.84   Max.   :112717.38  
+nrow(a375.14.RPM)
+#1656
+
+
+cor(log10(a375.14.RPM$a375_I+1),log10(a375.14.RPM$a375_II+1)) #0.9976069
+
+
+#### loading mirnoma 2013 #####
+a375_I <- read.table("~/data/ngs/data/miRNA/melanoma_Laura/RNAseq2013/TRIM/expression/vs_mirBase21/a375-dmso-1_CGATGT_R1/miRNA_expression.txt")
+a375_II <- read.table("~/data/ngs/data/miRNA/melanoma_Laura/RNAseq2013/TRIM/expression/vs_mirBase21/a375-dmso-2_CGATGT_R1/miRNA_expression.txt")
+
+
+colnames(a375_I) <- c("miRNAs","a375_I")
+colnames(a375_II) <- c("miRNAs","a375_II")
+
+a375.13 <- merge(a375_I,a375_II,all = TRUE)
+a375.13[is.na(a375.13)] <- 0
+
+
+out <- parsing.RC(a375.13,",","-")
+
+a375.13.RPM <- out[[2]]
+a375.13.RPM$mature <- NULL
+
+cor(log10(a375.13.RPM$a375_I+1),log10(a375.13.RPM$a375_II+1)) #0.9956755
+
+write.table(a375.13.RPM,file="./a375-dmso.rpm.txt",append=F,
+            sep="\t",dec=",",row.names=T,col.names=T,quote=F)
+
+
+
+#### merge mirnomi 2013 and 2014 #####
+a375.All <- merge(a375.13.RPM,a375.14.RPM,by=0, suffixes = c(".13",".14"))
+row.names(a375.All) <- a375.All$Row.names
+a375.All$Row.names <- NULL
+# nrow(a375.All) 1419
+
+
+##### loading miRCATCH #######
+load("~/data/ngs/data/miRNA/miR-CATCH/1run/results/CountMatrix.RData")
+mirCATCH <- RC.RPM[,-6]
+
+## EVEN, ODD w/o X1
+
+##### studio delle correlazioni tra probes 
+cor.test(log10(mirCATCH$X118.EVEN10+1),log10(mirCATCH$X117.ODD10+1)) #0.6893818
+cor.test(log10(mirCATCH$X116.EVEN9+1),log10(mirCATCH$X115.ODD9+1)) #0.6900272
+cor.test(log10(mirCATCH$X120.EVEN12+1),log10(mirCATCH$X119.ODD12+1)) #0.7087549
+
+
+## EVEN,ODD with X1 scaling (RPM of X1)
+factorX1 <- c(599.6753286,291.8808804,489.4807179,496.6695923,12.09230784,189.443182,274.4701229)
+
+RC.RPM.X1 <- as.data.frame(t((1/factorX1*100)*t(RC.RPM[,-1])))
+
+
+
+mirCATCH.X1 <-RC.RPM.X1[,-5]
+
+##### studio delle correlazioni tra probes 
+cor.test(log10(mirCATCH.X1$X118.EVEN10+1),log10(mirCATCH.X1$X117.ODD10+1)) #0.6893818 -> 0.7958156
+cor.test(log10(mirCATCH.X1$X116.EVEN9+1),log10(mirCATCH.X1$X115.ODD9+1)) #0.6900272 -> 0.7224171
+cor.test(log10(mirCATCH.X1$X120.EVEN12+1),log10(mirCATCH.X1$X119.ODD12+1)) #0.7087549 -> 0.742139 
+
+cor.test(log10(mirCATCH.X1$X118.EVEN10+1),log10(mirCATCH.X1$X116.EVEN9+1))
+cor.test(log10(mirCATCH.X1$X118.EVEN10+1),log10(mirCATCH.X1$X120.EVEN12+1))
+
+###### mean,median,sd ODD & EVEN ######
+indODD <- grep("ODD",colnames(mirCATCH.X1))
+
+mirCATCH.X1.mean <- as.data.frame(cbind("mean.ODD"=apply(mirCATCH.X1[,indODD],1,mean),
+                                "sd.ODD"=apply(mirCATCH.X1[,indODD],1,sd),
+                                "mean.EVEN"=apply(mirCATCH.X1[,-indODD],1,mean),
+                                "sd.EVEN"=apply(mirCATCH.X1[,-indODD],1,sd)))
+plot(mirCATCH.X1.mean[,c(1,3)])
+summary(mirCATCH.X1.mean)
+# mean.ODD            sd.ODD            mean.EVEN           sd.EVEN        
+# Min.   :    0.00   Min.   :    0.000   Min.   :    0.00   Min.   :    0.00  
+# 1st Qu.:    1.92   1st Qu.:    3.322   1st Qu.:    0.00   1st Qu.:    0.00  
+# Median :   24.89   Median :   28.161   Median :   14.08   Median :   21.28  
+# Mean   :  719.39   Mean   :  354.388   Mean   :  490.25   Mean   :  231.98  
+# 3rd Qu.:  122.78   3rd Qu.:   96.087   3rd Qu.:   82.84   3rd Qu.:   59.59  
+# Max.   :53926.80   Max.   :29211.174   Max.   :36333.71   Max.   :15376.48  
+
+## questo mi giustifica la specificità?? devo guardare la distribuzione degli RPM per loro
+indNA.ODD <- which(mirCATCH.X1.mean$mean.ODD==0) #69
+indNA.EVEN <- which(mirCATCH.X1.mean$mean.EVEN==0) #145
+
+mirCATCH.X1.mean.F <- mirCATCH.X1.mean[-c(indNA.ODD,indNA.EVEN),] ### 293
+
+summary(mirCATCH.X1.mean.F)
+# mean.ODD            sd.ODD            mean.EVEN           sd.EVEN         
+# Min.   :    1.92   Min.   :    3.322   Min.   :    3.84   Min.   :    3.071  
+# 1st Qu.:   22.01   1st Qu.:   26.656   1st Qu.:   16.91   1st Qu.:   21.413  
+# Median :   95.24   Median :   74.199   Median :   56.57   Median :   45.276  
+# Mean   : 1215.91   Mean   :  591.905   Mean   :  830.69   Mean   :  390.808  
+# 3rd Qu.:  417.60   3rd Qu.:  259.048   3rd Qu.:  240.16   3rd Qu.:  122.839  
+# Max.   :53926.80   Max.   :29211.174   Max.   :36333.71   Max.   :15376.476  
+
+summary(mirCATCH.X1.mean.F$sd.ODD/mirCATCH.X1.mean.F$mean.ODD*100)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 10.17   50.85   90.20   99.69  159.00  173.20 
+summary(mirCATCH.X1.mean.F$sd.EVEN/mirCATCH.X1.mean.F$mean.EVEN*100)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 3.784  49.440  87.430  95.740 173.200 173.200 
+
+length(which(mirCATCH.X1.mean.F$sd.ODD/mirCATCH.X1.mean.F$mean.ODD*100 > 100)) #133
+length(which(mirCATCH.X1.mean.F$sd.EVEN/mirCATCH.X1.mean.F$mean.EVEN*100 > 100)) #123
+
+mirCATCH.X1.mean.F.S <- mirCATCH.X1.mean.F[-c(which(mirCATCH.X1.mean.F$sd.ODD/mirCATCH.X1.mean.F$mean.ODD*100 > 100),
+                                              which(mirCATCH.X1.mean.F$sd.EVEN/mirCATCH.X1.mean.F$mean.EVEN*100 > 100)),]
+colnames(mirCATCH.X1.mean.F.S) <- colnames(mirCATCH.X1.mean.F)
+
+a <- sort(mirCATCH.X1.mean.F.S$mean.ODD,index.return = TRUE,decreasing = TRUE)
+b <- sort(mirCATCH.X1.mean.F.S$mean.EVEN,index.return = TRUE,decreasing = TRUE)
+
+
+a.M <- cbind(a$x,mirCATCH.X1.mean.F.S$sd.ODD[a$ix],1:134)
+row.names(a.M) <- row.names(mirCATCH.X1.mean.F.S)[a$ix]
+colnames(a.M) <- c("mean.ODD","sd.ODD","ind.mean.ODD")
+
+b.M <- cbind(b$x,mirCATCH.X1.mean.F.S$sd.ODD[b$ix],1:134)
+row.names(b.M) <- row.names(mirCATCH.X1.mean.F.S)[b$ix]
+colnames(b.M) <- c("mean.EVEN","sd.EVEN","ind.mean.EVEN")
+
+mirCATCH.rank <- merge(a.M,b.M,by=0)
+rownames(mirCATCH.rank) <- mirCATCH.rank$Row.names
+mirCATCH.rank$Row.names <- NULL
+
+a375.mean <- as.data.frame(cbind("mean.a375"=apply(a375.All,1,mean),
+                                 "sd.a375"=apply(a375.All,1,sd)))
+
+
+
+
+DataF <- merge(mirCATCH.rank,a375.mean,by=0,all.x=TRUE)
+DataF[is.na(DataF)] <- 0 ##sono 5
+
+c <- sort(DataF$mean.a375,index.return = TRUE, decreasing = TRUE)
+DataF <- cbind(DataF[c$ix,],1:134)
+rownames(DataF) <- DataF$Row.names
+DataF$Row.names <- NULL
+colnames(DataF)[9] <- "ind.mean.a375"
+
+
+write.table(DataF,file="./results/nuovoRanking_20170518.txt",append=F,
+             sep="\t",dec=",",row.names=F,col.names=T,quote=F)
+
+
+DataF <- merge(mirCATCH.rank,a375.mean,by=0,all.x=TRUE)
+DataF[is.na(DataF)] <- 0 ##sono 5
+
+DataF.R <- DataF[which(abs(DataF$ind.mean.ODD - DataF$ind.mean.EVEN)<10),]
+
+DataF.R.C <- DataF.R[-which(DataF.R$mean.a375<=1),]
+
+write.table(DataF.R.C,file="./results/RankingTable_20170527.txt",append=F,
+            sep="\t",dec=",",row.names=F,col.names=T,quote=F)
+### non la usiamo perchè resterebbe fuori il let7b con filtro delta > 10
+
+
+
+
+mirCATCH.S.mean <- apply(mirCATCH.X1[DataF.R$Row.names,],1,mean)
+mirCATCH.S.sd <- apply(mirCATCH.X1[DataF.R$Row.names,],1,sd)
+
+data.mean <- cbind(mirCATCH.S.mean, mirCATCH.S.sd,DataF.R$mean.a375,DataF.R$sd.a375)
+row.names(data.mean) <- DataF.R$Row.names
+
+duplicated(sapply(strsplit(row.names(data.mean),split = ","),"[[",2))
+
+
+selected <- c("hsa-mir-1246,hsa-miR-1246","hsa-mir-619,hsa-miR-619-5p","hsa-mir-1260a,hsa-miR-1260a",
+              "hsa-mir-7704,hsa-miR-7704","hsa-mir-5096,hsa-miR-5096",
+              "hsa-mir-1260b,hsa-miR-1260b","hsa-mir-423,hsa-miR-423-5p",
+              "hsa-mir-3651,hsa-miR-3651","hsa-mir-5701-1,hsa-miR-5701",
+              "hsa-mir-320b-1,hsa-miR-320b","hsa-mir-3180-1,hsa-miR-3180-3p",
+              "hsa-mir-3180-4,hsa-miR-3180","hsa-mir-125b-1,hsa-miR-125b-1-3p","hsa-mir-320a,hsa-miR-320a",
+              "hsa-mir-4792,hsa-miR-4792","hsa-mir-146a,hsa-miR-146a-5p","hsa-mir-181b-1,hsa-miR-181b-5p",
+              "hsa-let-7i,hsa-let-7i-5p","hsa-let-7b,hsa-let-7b-5p")
+
+pdf("results/selMiRNA.pdf",5,5)
+#par(mfrow=c(1,2))
+plot(log10(data.mean[!duplicated(sapply(strsplit(row.names(data.mean),split = ","),"[[",2)),1]),
+     log10(data.mean[!duplicated(sapply(strsplit(row.names(data.mean),split = ","),"[[",2)),3]),pch=19,xlim=c(-1,5),
+     xlab="miRCATCHv2.0",ylab="smallRNAseq")
+
+
+abline(0,1,cex=0.5)
+points(log10(data.mean[selected,1]),log10(data.mean[selected,3]),pch=19,col="red")
+
+#text(log10(data.mean[,1]),log10(data.mean[,3]), row.names(data.mean), cex=0.6, pos=4, col="blue")
+text(log10(data.mean[selected,1])+0.01,log10(data.mean[selected,3]+0.01), 
+     sub("hsa-","",sapply(strsplit(row.names(data.mean[selected,]),","),"[[",2)), 
+     cex=0.6, pos=4, col="blue")
+
+dev.off()
+
+
+write.table(DataF$Row.names,file = "results/perRNA22/list134miRNA.txt",quote = FALSE,
+            col.names = FALSE,row.names = FALSE)
+
+write.table(row.names(a375.All)[which(apply(a375.All,1,sum)>1)],
+            file = "results/perRNA22/listMirnoma.txt",quote = FALSE,
+            col.names = FALSE,row.names = FALSE)
+
+write.table(DataF.R$Row.names,file = "results/perRNA22/list94miRNA.txt",quote = FALSE,
+            col.names = FALSE,row.names = FALSE)
+
+write.table(selected,file = "results/perRNA22/list19miRNA.txt",quote = FALSE,
+            col.names = FALSE,row.names = FALSE)
+
+
+
